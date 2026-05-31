@@ -1,0 +1,152 @@
+# ============================================================================
+# ci.yml — continuous-integration gate for SealWard (S34L-W4RD)
+# ============================================================================
+# Runs on every push to master and every pull request. Four required checks,
+# all wired so a SKIPPED job can never report SUCCESS to a branch-protection /
+# merge-queue bar (explicit `if: always()` + in-body branch — skipped != green):
+#
+#   lint          ruff check + ruff format --check
+#   test          pytest + coverage to the configured floor (cross-platform)
+#   secret-scan   gitleaks (full working-tree) + the pre-publish secret scrub
+#   deps-audit    pip-audit on the resolved dependency set
+#
+# Public-safety invariant: this repo's source is public on purpose; a signing
+# tool's security comes from key secrecy + HSM/KMS custody, never from hiding
+# source. The secret-scan gate exists to keep it that way — no key material is
+# ever read, stored, or committed by SealWard or by this workflow.
+# ----------------------------------------------------------------------------
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --------------------------------------------------------------------------
+  # lint — ruff lint + format check. Pure-Python, single OS is sufficient.
+  # --------------------------------------------------------------------------
+  lint:
+    name: lint (ruff)
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff (pinned)
+        run: python -m pip install --require-hashes --no-deps ruff==0.12.5 || python -m pip install ruff==0.12.5
+      - name: ruff check
+        run: ruff check src tests
+      - name: ruff format --check
+        run: ruff format --check src tests
+
+  # --------------------------------------------------------------------------
+  # test — pytest + coverage across the platforms SealWard targets. The signer
+  # shells out to per-OS tools, so the unit suite (mocked subprocess) must pass
+  # identically on win/linux/macos.
+  # --------------------------------------------------------------------------
+  test:
+    name: test (py${{ matrix.python }} · ${{ matrix.os }})
+    if: always()
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install package + dev extras
+        run: python -m pip install -e ".[dev]"
+      - name: pytest + coverage (fail under the per-file floor)
+        run: pytest --cov=sealward --cov-report=term-missing --cov-fail-under=80
+
+  # --------------------------------------------------------------------------
+  # secret-scan — gitleaks over the working tree + the pre-publish scrub gate.
+  # The scrub script (scripts/pre_publish_secret_scrub.py) is the HARD content-
+  # safety precondition shared with release.yml. It MUST be present and MUST
+  # pass: a missing gate is a failure, never a silent pass.
+  # --------------------------------------------------------------------------
+  secret-scan:
+    name: secret-scan (gitleaks + scrub)
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: gitleaks — scan working tree (no key material may ship)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITLEAKS_ENABLE_SUMMARY: "true"
+      - name: pre-publish secret scrub (HARD gate — fail if absent)
+        run: |
+          if [ -f scripts/pre_publish_secret_scrub.py ]; then
+            echo "::group::pre_publish_secret_scrub.py"
+            python scripts/pre_publish_secret_scrub.py --tree .
+            echo "::endgroup::"
+          else
+            echo "::error file=scripts/pre_publish_secret_scrub.py::content-safety gate missing — refusing to report success"
+            exit 1
+          fi
+
+  # --------------------------------------------------------------------------
+  # deps-audit — pip-audit over the resolved dependency set (incl. optional
+  # cloud-custody + sigstore extras, which carry the heaviest transitive trees).
+  # --------------------------------------------------------------------------
+  deps-audit:
+    name: deps-audit (pip-audit)
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pip-audit (pinned)
+        run: python -m pip install pip-audit==2.9.0
+      - name: Resolve full dependency set (core + sigstore + kms)
+        run: python -m pip install -e ".[sigstore,kms,dev]"
+      - name: pip-audit (no fix, fail on any known vuln)
+        run: pip-audit --strict --desc
+
+  # --------------------------------------------------------------------------
+  # gate — single consolidated required check. Aggregates the four jobs so the
+  # branch-protection bar gates on ONE entry. Uses needs[*].result so a skipped
+  # or failed upstream job fails the gate (skipped != success).
+  # --------------------------------------------------------------------------
+  gate:
+    name: ci-gate
+    if: always()
+    needs: [lint, test, secret-scan, deps-audit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every upstream job to have succeeded
+        run: |
+          results='${{ needs.lint.result }} ${{ needs.test.result }} ${{ needs.secret-scan.result }} ${{ needs.deps-audit.result }}'
+          echo "upstream results: $results"
+          for r in $results; do
+            if [ "$r" != "success" ]; then
+              echo "::error::ci-gate failed — an upstream job was '$r' (skipped/failed/cancelled all count as not-green)"
+              exit 1
+            fi
+          done
+          echo "ci-gate: all four jobs green."
