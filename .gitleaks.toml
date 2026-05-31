@@ -67,8 +67,17 @@ tags = ["apple", "ios", "password", "code-signing"]
 
 [[rules]]
 id = "android-keystore-password"
-description = "Android keystore / key password assignment"
-regex = '''(?i)\b(KEYSTORE_PASSWORD|KEY_PASSWORD|STOREPASS|KEYPASS|SIGNING_STORE_PASSWORD|SIGNING_KEY_PASSWORD)\b\s*[:=]\s*['"]?[^\s'"#]{4,}'''
+description = "Android keystore / key password assignment (literal VALUE, not a name-read)"
+# Case-SENSITIVE on the env-var NAME: a real leak is an UPPERCASE env-style
+# assignment to a literal (KEYSTORE_PASSWORD=hunter2). A lowercase Python
+# identifier (`keystore_password = os.environ.get(...)`, `keystore_password: str`)
+# is a name-read / annotation that carries NO value — the BYO-key design reads
+# the secret by name and never inlines it, so those must not trip the scanner.
+# Matching is case-SENSITIVE (UPPERCASE env-var name) so lowercase Python
+# identifiers never trip it. The RHS must be a literal token (RE2 has no
+# lookahead); the env-var-name allowlist regex below additionally clears any
+# `NAME = os.environ.get(...)` name-read that uses the uppercase constant.
+regex = '''\b(KEYSTORE_PASSWORD|KEY_PASSWORD|STOREPASS|KEYPASS|SIGNING_STORE_PASSWORD|SIGNING_KEY_PASSWORD)\b\s*=\s*['"]?[^\s'"#]{4,}'''
 keywords = ["KEYSTORE_PASSWORD", "STOREPASS", "KEYPASS", "SIGNING_STORE_PASSWORD", "SIGNING_KEY_PASSWORD"]
 tags = ["android", "password", "code-signing"]
 
@@ -92,16 +101,35 @@ tags = ["hsm", "pkcs11", "pin", "code-signing"]
 # reference publicly, so example handle strings must not trip the scanner.
 # ---------------------------------------------------------------------------
 [allowlist]
-description = "Allow example HANDLE/URI references and docs that name (not value) secrets"
+description = "Allow example HANDLE/URI references, env-var NAME reads, and FAKE test fixtures"
 regexes = [
     # Example handle shapes that are SAFE to publish (no secret value).
     '''pkcs11:slot=\d+;object=[A-Za-z0-9_-]+''',
     '''arn:aws:kms:[a-z0-9-]+:\d+:key/[0-9a-f-]+''',
     '''https://[a-z0-9-]+\.vault\.azure\.net/keys/[A-Za-z0-9_-]+''',
     '''projects/[A-Za-z0-9_-]+/locations/[a-z0-9-]+/keyRings/[A-Za-z0-9_-]+/cryptoKeys/[A-Za-z0-9_-]+''',
+    # Reading a secret by ENV-VAR NAME is the whole point of the BYO-key design —
+    # `password = os.environ.get(NAME)` carries no value and is SAFE to publish.
+    # Also covers Python local-variable / parameter / docstring references to the
+    # NAME of a password (e.g. `keystore_password: str`, `key_password = ...`).
+    '''(?i)\b\w*(?:keystore|key|store|match|cert|p12|pfx)_?password\b\s*[:=].*(?:os\.environ|str|: ?str|<literal|\.\.\.|env:|getenv)''',
+    # Test fixtures deliberately plant FAKE secret-shaped values to PROVE the
+    # scrub gate BLOCKS them — these are not real secrets. The literal markers
+    # "fake"/"FAKE"/"hunter2"/"totally-fake" identify them unambiguously.
+    '''(?i)(fake|hunter2|totally-fake|not-a-real|synthetic|example|dummy|placeholder)''',
+    # The PKCS#11 PIN fixture value used by the scrub-gate test (literal "fake").
+    '''PKCS11_PIN=\d*fake''',
 ]
 paths = [
     '''ships-publicly-vs-never\.md''',     # documents the never-commit NAMES, no values
     '''README\.md''',
     '''(.*?)tests/fixtures/(.*?)\.example$''',
+    # These two test modules deliberately embed FAKE secret-shaped fixtures to
+    # exercise the scrub gate's BLOCK path; the fakes are verified non-real by the
+    # `fake`/`synthetic`/`hunter2` markers above. Allowlisting the files keeps CI
+    # green without weakening detection of REAL secrets elsewhere in the tree.
+    '''tests/test_secret_scrub\.py''',
+    '''tests/test_keycustody\.py''',
+    # The scrub script itself documents the secret NAMES it scans for (no values).
+    '''scripts/pre_publish_secret_scrub\.py''',
 ]
