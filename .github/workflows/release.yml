@@ -1,0 +1,185 @@
+# ============================================================================
+# release.yml — build, prove provenance, and publish a SealWard release
+# ============================================================================
+# Triggered by pushing a semver tag (vX.Y.Z) or manual dispatch. The flow:
+#
+#   1. scrub-gate    pre_publish_secret_scrub.py is a HARD precondition — it
+#                    runs FIRST and every later job `needs:` it. No build, no
+#                    sign, no publish happens unless the scrub is green.
+#   2. build         build wheel + sdist (PEP 517) and a CycloneDX SBOM via
+#                    `python -m sealward.provenance.sbom`.
+#   3. provenance    Sigstore KEYLESS sign (Fulcio + Rekor, OIDC ambient
+#                    identity — NO long-lived signing key anywhere) of every
+#                    dist artifact, plus an SLSA provenance attestation via the
+#                    GitHub artifact-attestation API.
+#   4. publish       attach dist + SBOM + .sigstore bundles to a GitHub
+#                    release. Gated on the `release` environment, which carries
+#                    a required reviewer — a HUMAN approves; the workflow never
+#                    force-publishes and never auto-merges.
+#
+# Public-safety invariant: cloud signing is OIDC / keyless. SealWard signs its
+# OWN releases so consumers can verify the binary they pin came from this CI
+# identity through an auditable transparency log. No key material is committed,
+# read, or stored by this workflow.
+# ----------------------------------------------------------------------------
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag or SHA to release"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # --------------------------------------------------------------------------
+  # scrub-gate — HARD content-safety precondition. Runs before anything else;
+  # all other jobs `needs:` it, so a missing or red scrub blocks the entire
+  # release. A missing gate is a failure, never a silent pass.
+  # --------------------------------------------------------------------------
+  scrub-gate:
+    name: scrub-gate (pre-publish secret scrub)
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: gitleaks — full working-tree scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+      - name: pre-publish secret scrub (HARD gate — fail if absent)
+        run: |
+          if [ -f scripts/pre_publish_secret_scrub.py ]; then
+            python scripts/pre_publish_secret_scrub.py --tree . --strict
+          else
+            echo "::error file=scripts/pre_publish_secret_scrub.py::publish blocked — content-safety gate missing"
+            exit 1
+          fi
+
+  # --------------------------------------------------------------------------
+  # build — wheel + sdist + CycloneDX SBOM. Depends on a green scrub.
+  # --------------------------------------------------------------------------
+  build:
+    name: build (wheel + sdist + SBOM)
+    if: always()
+    needs: scrub-gate
+    # Gate the build on a genuinely-green scrub (skipped/failed both block).
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require scrub-gate green
+        if: needs.scrub-gate.result != 'success'
+        run: |
+          echo "::error::release blocked — scrub-gate was '${{ needs.scrub-gate.result }}'"
+          exit 1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build + provenance extras
+        run: python -m pip install build==1.2.2 ".[sigstore]"
+      - name: Build wheel + sdist
+        run: python -m build --outdir dist
+      - name: Generate CycloneDX SBOM (sealward.provenance.sbom)
+        run: python -m sealward.provenance.sbom --output dist/sealward.cdx.json
+      - name: Upload dist + SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # provenance — Sigstore keyless sign + SLSA attestation of the built dist.
+  # KEYLESS: id-token:write mints an ambient OIDC identity that Fulcio binds to
+  # a short-lived cert; Rekor logs the signature. No long-lived key exists.
+  # --------------------------------------------------------------------------
+  provenance:
+    name: provenance (sigstore keyless + SLSA)
+    if: always()
+    needs: build
+    permissions:
+      contents: read
+      id-token: write       # OIDC — keyless Sigstore signing identity
+      attestations: write   # SLSA build provenance attestation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require build green
+        if: needs.build.result != 'success'
+        run: |
+          echo "::error::release blocked — build was '${{ needs.build.result }}'"
+          exit 1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download dist + SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Install Sigstore client (keyless) (pinned)
+        run: python -m pip install "sigstore==4.0.1"
+      - name: Sigstore keyless sign every dist artifact (own-provenance)
+        run: |
+          python -m sealward.provenance.sigstore_sign --dist dist --bundle-suffix .sigstore.json
+      - name: SLSA build provenance attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: "dist/*"
+      - name: Re-upload signed dist (bundles included)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-signed
+          path: dist/
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # publish — attach to a GitHub release. Gated on the `release` environment,
+  # which carries a required human reviewer. The workflow NEVER auto-publishes
+  # without that human approval and NEVER force-publishes.
+  # --------------------------------------------------------------------------
+  publish:
+    name: publish (GitHub release — human-approved)
+    if: always()
+    needs: provenance
+    environment: release          # required-reviewer gate — a HUMAN approves
+    permissions:
+      contents: write             # create the GitHub release + upload assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require provenance green
+        if: needs.provenance.result != 'success'
+        run: |
+          echo "::error::release blocked — provenance was '${{ needs.provenance.result }}'"
+          exit 1
+      - name: Download signed dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-signed
+          path: dist
+      - name: Create GitHub release with signed artifacts + SBOM
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/*.sigstore.json
+            dist/sealward.cdx.json
+          fail_on_unmatched_files: true
+          generate_release_notes: true
