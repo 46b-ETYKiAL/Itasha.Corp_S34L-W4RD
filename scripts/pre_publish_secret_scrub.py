@@ -128,9 +128,7 @@ _CONTENT_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     # PKCS#11 / HSM / token PINs — UPPERCASE env-var name only.
     (
         "pkcs11-token-pin",
-        re.compile(
-            r"\b(?:PKCS11_PIN|TOKEN_PIN|HSM_PIN|SLOT_PIN)\b\s*[:=]\s*" + _VALUE
-        ),
+        re.compile(r"\b(?:PKCS11_PIN|TOKEN_PIN|HSM_PIN|SLOT_PIN)\b\s*[:=]\s*" + _VALUE),
     ),
     # AWS access-key id (the literal shape is itself the secret).
     (
@@ -144,9 +142,7 @@ _CONTENT_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     # Azure service-principal client secret assignment.
     (
         "azure-client-secret",
-        re.compile(
-            r"\b(?:AZURE_CLIENT_SECRET|ARM_CLIENT_SECRET)\b\s*[:=]\s*" + _VALUE
-        ),
+        re.compile(r"\b(?:AZURE_CLIENT_SECRET|ARM_CLIENT_SECRET)\b\s*[:=]\s*" + _VALUE),
     ),
     # GCP service-account JSON private_key field.
     (
@@ -156,9 +152,7 @@ _CONTENT_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     # HashiCorp Vault token (hvs. / s. legacy prefix) assignment.
     (
         "hashicorp-vault-token",
-        re.compile(
-            r"\bVAULT_TOKEN\b\s*[:=]\s*['\"]?(?:hvs\.|s\.)[A-Za-z0-9._-]{12,}"
-        ),
+        re.compile(r"\bVAULT_TOKEN\b\s*[:=]\s*['\"]?(?:hvs\.|s\.)[A-Za-z0-9._-]{12,}"),
     ),
 )
 
@@ -290,9 +284,7 @@ def scan_tree(root: Path) -> _ScanResult:
             continue
 
         # 1. Extension / filename denylist (the file IS key material).
-        if path.suffix.lower() in _KEY_MATERIAL_EXTENSIONS or _filename_is_key_material(
-            path.name
-        ):
+        if path.suffix.lower() in _KEY_MATERIAL_EXTENSIONS or _filename_is_key_material(path.name):
             result.findings.append(
                 Finding(
                     path=rel_posix,

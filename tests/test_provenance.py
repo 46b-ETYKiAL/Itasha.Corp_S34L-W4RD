@@ -53,6 +53,35 @@ def test_sbom_lists_pydantic_core_dependency() -> None:
     assert "pydantic" in names
 
 
+def test_sbom_falls_back_to_pyproject_when_distribution_absent() -> None:
+    """When the dist is NOT installed, deps come from pyproject.toml (no omission).
+
+    Reconciliation #1: an SBOM must list declared deps regardless of install
+    state. Querying a distribution name that is not installed forces the
+    pyproject fallback; pydantic (the declared core dep) MUST still appear.
+    """
+    components = sbom._collect_components("sealward-definitely-not-installed-xyz")
+    names = {c.name.lower() for c in components}
+    assert "pydantic" in names
+    # The fallback marks versions as declared-not-installed honestly (no fabricated
+    # concrete version) UNLESS the package happens to be importable in the env.
+    assert all(c.version for c in components)
+
+
+def test_sbom_component_declared_not_installed_carries_honesty_flag() -> None:
+    comp = sbom.SbomComponent("nope-not-real-pkg", "1.2.3", installed=False)
+    rendered = comp.to_dict()
+    props = rendered["properties"]
+    assert props[0]["value"] == "declared-not-installed"
+    assert rendered["purl"] == "pkg:pypi/nope-not-real-pkg@1.2.3"
+
+
+def test_sbom_root_component_falls_back_to_zero_version_when_absent() -> None:
+    root = sbom._root_component("sealward-not-installed-xyz")
+    assert root["name"] == "sealward-not-installed-xyz"
+    assert root["version"] == "0.0.0"  # honest fallback, never fabricated
+
+
 def test_sbom_components_have_purl_and_version() -> None:
     doc = sbom.build_sbom()
     for component in doc["components"]:  # type: ignore[union-attr]
@@ -310,3 +339,167 @@ def test_sigstore_no_key_material_logged_on_error(
     assert outcome.status == SigningStatus.FAILED
     assert "PRIVATE KEY" not in (outcome.error or "")
     assert "[redacted key material]" in (outcome.error or "")
+
+
+# --------------------------------------------------------------------------- #
+# Module CLIs — the runnable entry points the release workflow invokes         #
+# --------------------------------------------------------------------------- #
+
+
+def test_sbom_cli_writes_valid_document_to_output(tmp_path: Path) -> None:
+    out = tmp_path / "nested" / "sealward.cdx.json"
+    rc = sbom.main(["--output", str(out)])
+    assert rc == 0
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    assert doc["bomFormat"] == "CycloneDX"
+    assert doc["specVersion"] == "1.6"
+    names = {c["name"].lower() for c in doc["components"]}
+    assert "pydantic" in names
+
+
+def test_sbom_cli_stdout_default(capsys) -> None:
+    rc = sbom.main([])
+    assert rc == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["bomFormat"] == "CycloneDX"
+
+
+def test_sbom_cli_deterministic_serial(capsys) -> None:
+    serial = "urn:uuid:00000000-0000-0000-0000-000000000000"
+    rc = sbom.main(["--serial-number", serial])
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out)["serialNumber"] == serial
+
+
+def test_slsa_cli_emits_statement_with_real_digest(tmp_path: Path, capsys) -> None:
+    artifact = _artifact(tmp_path)
+    rc = slsa.main(
+        [
+            "--artifact",
+            str(artifact),
+            "--builder-id",
+            "https://example.test/ci",
+            "--build-type",
+            "https://example.test/build",
+        ]
+    )
+    assert rc == 0
+    statement = json.loads(capsys.readouterr().out)
+    assert statement["_type"] == slsa.IN_TOTO_STATEMENT_TYPE
+    assert statement["subject"][0]["name"] == artifact.name
+    assert len(statement["subject"][0]["digest"]["sha256"]) == 64
+
+
+def test_slsa_cli_requires_an_artifact(capsys) -> None:
+    rc = slsa.main(["--builder-id", "https://example.test/ci"])
+    assert rc == 2
+    assert "at least one --artifact" in capsys.readouterr().err
+
+
+def test_slsa_cli_missing_subject_file_is_clean_error(tmp_path: Path, capsys) -> None:
+    rc = slsa.main(
+        [
+            "--artifact",
+            str(tmp_path / "does-not-exist.whl"),
+            "--builder-id",
+            "https://example.test/ci",
+        ]
+    )
+    assert rc == 2  # FileNotFoundError handled, never raised into the process
+
+
+def test_slsa_cli_uses_github_env_defaults(tmp_path: Path, capsys, monkeypatch) -> None:
+    artifact = _artifact(tmp_path)
+    monkeypatch.setenv(
+        "GITHUB_WORKFLOW_REF", "owner/repo/.github/workflows/release.yml@refs/tags/v1"
+    )
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.setenv("GITHUB_SHA", "a" * 40)
+    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
+    monkeypatch.setenv("GITHUB_REF", "refs/tags/v1")
+    rc = slsa.main(["--artifact", str(artifact)])  # no --builder-id; from env
+    assert rc == 0
+    statement = json.loads(capsys.readouterr().out)
+    builder = statement["predicate"]["runDetails"]["builder"]["id"]
+    assert builder.endswith("release.yml@refs/tags/v1")
+    deps = statement["predicate"]["buildDefinition"]["resolvedDependencies"]
+    assert any(d["uri"].endswith("owner/repo") for d in deps)
+
+
+def test_sigstore_release_cli_skips_cleanly_when_unavailable(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """When sigstore is absent, the CLI exits 3 (honest 'could not sign')."""
+    monkeypatch.setattr(sigstore_release, "_SIGSTORE_AVAILABLE", False)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "sealward-0.1.0-py3-none-any.whl").write_bytes(b"wheel")
+    rc = sigstore_release.main(["--dist", str(dist)])
+    assert rc == 3
+    assert "skipped" in capsys.readouterr().err.lower()
+
+
+def test_sigstore_release_cli_missing_dist_is_error(tmp_path: Path, capsys) -> None:
+    rc = sigstore_release.main(["--dist", str(tmp_path / "nope")])
+    assert rc == 2
+    assert "not found" in capsys.readouterr().err
+
+
+def test_sigstore_release_cli_no_artifacts_is_error(tmp_path: Path, capsys) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    rc = sigstore_release.main(["--dist", str(dist)])
+    assert rc == 2
+    assert "no *.whl" in capsys.readouterr().err
+
+
+def test_sigstore_release_cli_rejects_wrong_bundle_suffix(tmp_path: Path, capsys) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    rc = sigstore_release.main(["--dist", str(dist), "--bundle-suffix", ".sig"])
+    assert rc == 2
+    assert "bundle-suffix" in capsys.readouterr().err
+
+
+def test_sigstore_release_cli_signs_when_client_available(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """With a fake signing client + version floor met, the CLI signs + exits 0."""
+
+    class _FakeBundle:
+        def to_json(self) -> str:
+            return "{}"
+
+    class _FakeResult:
+        bundle = _FakeBundle()
+        log_index = 7
+
+    class _FakeClient:
+        def sign_artifact(self, artifact: Path) -> object:
+            return _FakeResult()
+
+        def verify_artifact(self, artifact: Path, bundle_bytes: bytes) -> object:
+            import hashlib
+
+            digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+
+            class _V:
+                verified = True
+                artifact_digest = digest
+
+            return _V()
+
+    monkeypatch.setattr(sigstore_release, "_SIGSTORE_AVAILABLE", True)
+    monkeypatch.setattr(sigstore_release, "sigstore_version", lambda: "4.0.1")
+    monkeypatch.setattr(
+        sigstore_release.SigstoreReleaseSigner,
+        "_build_client",
+        lambda self: _FakeClient(),
+    )
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "sealward-0.1.0-py3-none-any.whl").write_bytes(b"wheel-bytes")
+    rc = sigstore_release.main(["--dist", str(dist)])
+    assert rc == 0
+    assert (dist / "sealward-0.1.0-py3-none-any.whl.sigstore.json").is_file()
