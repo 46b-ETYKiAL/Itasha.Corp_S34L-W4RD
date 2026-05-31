@@ -30,6 +30,7 @@ from __future__ import annotations
 import importlib.metadata as importlib_metadata
 import json
 import re
+import sys
 import tomllib
 import uuid
 from datetime import UTC, datetime
@@ -276,3 +277,63 @@ def render_sbom_json(
         indent=indent,
         sort_keys=False,
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Module CLI: emit a CycloneDX 1.6 SBOM to stdout or ``--output``.
+
+    Invoked by the release workflow as
+    ``python -m sealward.provenance.sbom --output dist/sealward.cdx.json``.
+    Returns ``0`` on success, ``2`` on a write error (never raises into the
+    process, so the workflow gets a clean exit code).
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="python -m sealward.provenance.sbom",
+        description="Emit a CycloneDX 1.6 SBOM for the SealWard distribution.",
+    )
+    parser.add_argument(
+        "--distribution",
+        default=DEFAULT_DISTRIBUTION,
+        help=f"distribution to describe (default: {DEFAULT_DISTRIBUTION})",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="write the SBOM JSON to this path (default: stdout)",
+    )
+    parser.add_argument(
+        "--serial-number",
+        default=None,
+        help="fixed urn:uuid serialNumber for reproducible output (default: random)",
+    )
+    parser.add_argument(
+        "--indent",
+        type=int,
+        default=2,
+        help="JSON indentation (default: 2)",
+    )
+    args = parser.parse_args(argv)
+
+    document = render_sbom_json(
+        args.distribution,
+        serial_number=args.serial_number,
+        indent=args.indent,
+    )
+    if args.output is None:
+        print(document)
+        return 0
+    try:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(document + "\n", encoding="utf-8")
+    except OSError as exc:
+        print(f"error: failed to write SBOM to {args.output}: {exc}", file=sys.stderr)
+        return 2
+    print(f"wrote CycloneDX {CYCLONEDX_SPEC_VERSION} SBOM to {args.output}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - module CLI entry point
+    raise SystemExit(main())

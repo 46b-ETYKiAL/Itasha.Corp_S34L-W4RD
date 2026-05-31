@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -179,3 +180,104 @@ def render_slsa_json(
         external_parameters=external_parameters,
     )
     return json.dumps(statement, indent=indent, sort_keys=False)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Module CLI: emit a SLSA v1.0 in-toto provenance statement.
+
+    Invoked as ``python -m sealward.provenance.slsa --artifact dist/foo.whl
+    --builder-id <uri> --build-type <uri> [--output PATH]``. ``--builder-id``
+    defaults to the GitHub Actions environment (``GITHUB_SERVER_URL`` +
+    ``GITHUB_WORKFLOW_REF``) when present, so CI can call it without explicit
+    args. Returns ``0`` on success, ``2`` on a missing subject / write error
+    (never raises into the process, so the workflow gets a clean exit code).
+    """
+    import argparse
+    import os
+
+    gh_ref = os.environ.get("GITHUB_WORKFLOW_REF")
+    gh_server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    default_builder = f"{gh_server}/{gh_ref}" if gh_ref else None
+    default_build_type = "https://github.com/actions/runner/github-hosted"
+    default_run_id = os.environ.get("GITHUB_RUN_ID")
+    default_repo = os.environ.get("GITHUB_REPOSITORY")
+    default_sha = os.environ.get("GITHUB_SHA")
+    default_event_ref = os.environ.get("GITHUB_REF")
+
+    parser = argparse.ArgumentParser(
+        prog="python -m sealward.provenance.slsa",
+        description="Emit a SLSA v1.0 in-toto provenance statement for release artifacts.",
+    )
+    parser.add_argument(
+        "--artifact",
+        dest="artifacts",
+        action="append",
+        type=Path,
+        default=None,
+        help="release artifact to attest (repeatable); each is hashed from disk",
+    )
+    parser.add_argument(
+        "--builder-id",
+        default=default_builder,
+        required=default_builder is None,
+        help="URI of the build platform / CI identity (default: $GITHUB_WORKFLOW_REF)",
+    )
+    parser.add_argument(
+        "--build-type",
+        default=default_build_type,
+        help=f"URI of the build process type (default: {default_build_type})",
+    )
+    parser.add_argument(
+        "--invocation-id",
+        default=default_run_id,
+        help="opaque build invocation id (default: $GITHUB_RUN_ID)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="write the statement JSON to this path (default: stdout)",
+    )
+    parser.add_argument("--indent", type=int, default=2, help="JSON indentation (default: 2)")
+    args = parser.parse_args(argv)
+
+    if not args.artifacts:
+        print("error: at least one --artifact is required", file=sys.stderr)
+        return 2
+
+    materials: list[BuildMaterial] = []
+    if default_repo:
+        digest = {"sha1": default_sha} if default_sha else None
+        materials.append(BuildMaterial(f"{gh_server}/{default_repo}", digest))
+
+    external_parameters = {"ref": default_event_ref} if default_event_ref else {}
+
+    try:
+        document = render_slsa_json(
+            args.artifacts,
+            builder_id=args.builder_id,
+            build_type=args.build_type,
+            materials=materials or None,
+            invocation_id=args.invocation_id,
+            external_parameters=external_parameters,
+            indent=args.indent,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.output is None:
+        print(document)
+        return 0
+    try:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(document + "\n", encoding="utf-8")
+    except OSError as exc:
+        print(f"error: failed to write SLSA statement to {args.output}: {exc}", file=sys.stderr)
+        return 2
+    print(f"wrote SLSA v1.0 provenance to {args.output}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - module CLI entry point
+    raise SystemExit(main())

@@ -97,7 +97,15 @@ jobs:
         run: python -m build --outdir dist
       - name: Generate CycloneDX SBOM (sealward.provenance.sbom)
         run: python -m sealward.provenance.sbom --output dist/sealward.cdx.json
-      - name: Upload dist + SBOM artifact
+      - name: Generate in-house SLSA provenance (sealward.provenance.slsa)
+        # In-house SLSA v1.0 statement (builder-id + build-type default to the
+        # GitHub Actions env). Complements the actions/attest-build-provenance
+        # attestation in the provenance job with a self-contained statement.
+        run: |
+          python -m sealward.provenance.slsa \
+            $(for f in dist/*.whl dist/*.tar.gz; do printf -- "--artifact %s " "$f"; done) \
+            --output dist/sealward.slsa.json
+      - name: Upload dist + SBOM + SLSA artifact
         uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -181,5 +189,6 @@ jobs:
             dist/*.tar.gz
             dist/*.sigstore.json
             dist/sealward.cdx.json
+            dist/sealward.slsa.json
           fail_on_unmatched_files: true
           generate_release_notes: true

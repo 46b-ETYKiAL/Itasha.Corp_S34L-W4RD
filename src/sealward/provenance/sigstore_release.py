@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -332,3 +333,98 @@ def _redact(text: str | None) -> str:
         else:
             out.append(line)
     return "\n".join(out)[:2000]
+
+
+#: Default artifact globs the release signer targets inside the dist dir.
+_DEFAULT_ARTIFACT_GLOBS = ("*.whl", "*.tar.gz")
+
+#: The bundle suffix this signer writes; the workflow's --bundle-suffix MUST match.
+_BUNDLE_SUFFIX = ".sigstore.json"
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Module CLI: keyless-sign every release artifact in a dist directory.
+
+    Invoked by the release workflow as ``python -m
+    sealward.provenance.sigstore_release --dist dist --bundle-suffix
+    .sigstore.json``. Signs each ``*.whl`` / ``*.tar.gz`` under ``--dist`` via
+    :class:`SigstoreReleaseSigner`, writing a ``<artifact>.sigstore.json``
+    bundle next to each.
+
+    Exit codes (never raises into the process):
+
+    * ``0`` — every artifact signed + verify-after-sign passed.
+    * ``2`` — at least one artifact FAILED to sign, OR ``--dist`` is missing /
+      contains no signable artifact.
+    * ``3`` — the optional ``sigstore`` library is absent / below the
+      CVE-2026-24137 floor (every artifact SKIPPED). This is an honest "could
+      not sign" signal — the workflow installs ``sigstore==4.0.1`` so this code
+      indicates a misconfigured environment, never a fabricated success.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="python -m sealward.provenance.sigstore_release",
+        description="Sigstore keyless-sign SealWard's own release artifacts.",
+    )
+    parser.add_argument(
+        "--dist",
+        type=Path,
+        required=True,
+        help="directory containing the release artifacts to sign",
+    )
+    parser.add_argument(
+        "--bundle-suffix",
+        default=_BUNDLE_SUFFIX,
+        help=f"bundle filename suffix (must be {_BUNDLE_SUFFIX!r}; the only suffix written)",
+    )
+    args = parser.parse_args(argv)
+
+    if args.bundle_suffix != _BUNDLE_SUFFIX:
+        print(
+            f"error: --bundle-suffix must be {_BUNDLE_SUFFIX!r} "
+            f"(the signer writes only that suffix); got {args.bundle_suffix!r}",
+            file=sys.stderr,
+        )
+        return 2
+
+    dist: Path = args.dist
+    if not dist.is_dir():
+        print(f"error: --dist directory not found: {dist}", file=sys.stderr)
+        return 2
+
+    artifacts: list[Path] = []
+    for pattern in _DEFAULT_ARTIFACT_GLOBS:
+        artifacts.extend(sorted(dist.glob(pattern)))
+    if not artifacts:
+        print(f"error: no *.whl / *.tar.gz artifacts found under {dist}", file=sys.stderr)
+        return 2
+
+    signer = SigstoreReleaseSigner()
+    failed: list[str] = []
+    skipped: list[str] = []
+    signed: list[str] = []
+    for artifact in artifacts:
+        outcome = signer.sign(artifact)
+        if outcome.status is SigningStatus.SIGNED:
+            signed.append(artifact.name)
+            print(f"signed: {artifact.name} -> {artifact.name}{_BUNDLE_SUFFIX}", file=sys.stderr)
+        elif outcome.status is SigningStatus.SKIPPED_TOOL_ABSENT:
+            skipped.append(artifact.name)
+            print(f"skipped: {artifact.name} ({outcome.skipped_reason})", file=sys.stderr)
+        else:
+            failed.append(artifact.name)
+            print(f"FAILED: {artifact.name} ({outcome.error})", file=sys.stderr)
+
+    if failed:
+        return 2
+    if skipped and not signed:
+        # Every artifact was skipped (sigstore unavailable / below floor) — honest
+        # "could not sign" rather than a green that signed nothing.
+        return 3
+    print(f"sigstore: signed {len(signed)} artifact(s)", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - module CLI entry point
+    raise SystemExit(main())
