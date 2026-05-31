@@ -9,4 +9,6 @@ credential is absent it emits a structured skipped/blocked reason.
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from sealward.backends.base import CapabilityReport, SignerBackend, SignerBackendABC
+
+__all__ = ["CapabilityReport", "SignerBackend", "SignerBackendABC"]
