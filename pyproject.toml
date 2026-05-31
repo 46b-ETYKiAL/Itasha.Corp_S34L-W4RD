@@ -1,0 +1,88 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sealward"
+version = "0.1.0"
+description = "SealWard — a cross-platform code-signing orchestrator (Windows/macOS/Linux/Android/iOS) with a pluggable key-custody abstraction. Keys never live here."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT OR Apache-2.0" }
+authors = [{ name = "Itasha.Corp" }]
+keywords = ["code-signing", "authenticode", "notarization", "apksigner", "sigstore", "cosign", "minisign", "slsa", "sbom"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Software Development :: Build Tools",
+]
+
+# Core install carries ZERO heavy dependencies: the default signing path shells
+# out to the OS / OSS tools (SignTool, osslsigncode, jsign, codesign, notarytool,
+# apksigner, gpg, minisign, cosign) and resolves key HANDLES only. Pydantic is the
+# single core dependency (declarative-config schema validation), pinned exact.
+dependencies = [
+    "pydantic==2.11.7",
+]
+
+[project.optional-dependencies]
+# Sigstore keyless own-release provenance (Fulcio + Rekor). Pinned >=4.0.0 to
+# mitigate CVE-2026-24137. Optional so the core installs with no heavy deps.
+sigstore = [
+    "sigstore==4.0.1",
+]
+# Optional cloud key-custody backends (BYO-key, default-OFF). The resolver never
+# holds platform-side custody — it resolves a slot/ARN/URI handle. These extras
+# are installed only when the operator configures a cloud handle.
+kms = [
+    "boto3==1.40.6",
+    "azure-keyvault-keys==4.10.0",
+    "azure-identity==1.19.0",
+    "google-cloud-kms==3.5.1",
+    "hvac==2.3.0",
+]
+dev = [
+    "pytest==8.4.1",
+    "pytest-cov==6.2.1",
+    "ruff==0.12.5",
+]
+
+[project.scripts]
+sealward = "sealward.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/46b-ETYKiAL/Itasha.Corp_S34L-W4RD"
+Repository = "https://github.com/46b-ETYKiAL/Itasha.Corp_S34L-W4RD"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sealward"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "C4", "SIM", "RUF"]
+# S603/S607: subprocess calls are the design (shell-out to signing tools) and use
+# argv lists with shell=False; S404 import-subprocess is intrinsic to the tool.
+ignore = ["S404"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+
+[tool.coverage.run]
+source = ["src/sealward"]
+branch = true
