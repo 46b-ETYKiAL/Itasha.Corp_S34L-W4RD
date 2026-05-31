@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-label="S34L-W4RD social card: a cross-platform code-signing orchestrator. A void-black CRT panel with a large hexagonal cryptographic seal over warding rings, the wordmark S34L-W4RD, and the line sign every platform from one config, keys never live here.">
+  <defs>
+    <pattern id="ssc" patternUnits="userSpaceOnUse" width="1280" height="4">
+      <rect width="1280" height="2" fill="transparent"/><rect y="2" width="1280" height="2" fill="rgba(0,0,0,0.16)"/>
+    </pattern>
+    <radialGradient id="svig" cx="50%" cy="46%" r="78%">
+      <stop offset="0%" stop-color="transparent"/><stop offset="100%" stop-color="rgba(0,0,0,0.55)"/>
+    </radialGradient>
+    <radialGradient id="score" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.3"/><stop offset="60%" stop-color="#a020ff" stop-opacity="0.12"/><stop offset="100%" stop-color="#a020ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sward" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00e5ff"/><stop offset="55%" stop-color="#a020ff"/><stop offset="100%" stop-color="#e020ff"/>
+    </linearGradient>
+    <filter id="sglow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="sphos"><feGaussianBlur in="SourceGraphic" stdDeviation="0.8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <style>
+    text { font-family: "JetBrains Mono","SF Mono","Fira Code","Cascadia Code",Consolas,monospace; }
+  </style>
+
+  <rect x="0" y="0" width="1280" height="640" fill="#08060d"/>
+  <rect x="0" y="0" width="1280" height="640" fill="url(#score)"/>
+
+  <g transform="translate(640, 250)">
+    <circle cx="0" cy="0" r="118" fill="none" stroke="#a020ff" stroke-width="1" opacity="0.4" stroke-dasharray="3,7"/>
+    <circle cx="0" cy="0" r="100" fill="none" stroke="#00e5ff" stroke-width="0.7" opacity="0.3"/>
+    <circle cx="0" cy="0" r="86" fill="none" stroke="#e020ff" stroke-width="0.7" opacity="0.35" stroke-dasharray="1,9"/>
+    <g font-size="9" letter-spacing="1" text-anchor="middle" filter="url(#sphos)">
+      <g><circle cx="0" cy="-118" r="9" fill="#08060d" stroke="#00e5ff" stroke-width="1"/><text x="0" y="-115" fill="#00e5ff" font-size="7">WIN</text></g>
+      <g><circle cx="112" cy="-36" r="9" fill="#08060d" stroke="#a020ff" stroke-width="1"/><text x="112" y="-33" fill="#a020ff" font-size="7">MAC</text></g>
+      <g><circle cx="69" cy="95" r="9" fill="#08060d" stroke="#e020ff" stroke-width="1"/><text x="69" y="98" fill="#e020ff" font-size="7">LIN</text></g>
+      <g><circle cx="-69" cy="95" r="9" fill="#08060d" stroke="#00e5ff" stroke-width="1"/><text x="-69" y="98" fill="#00e5ff" font-size="7">AND</text></g>
+      <g><circle cx="-112" cy="-36" r="9" fill="#08060d" stroke="#a020ff" stroke-width="1"/><text x="-112" y="-33" fill="#a020ff" font-size="7">IOS</text></g>
+    </g>
+    <g filter="url(#sglow)">
+      <polygon points="0,-72 62,-36 62,36 0,72 -62,36 -62,-36" fill="#08060d" stroke="url(#sward)" stroke-width="2.6"/>
+      <polygon points="0,-56 48,-28 48,28 0,56 -48,28 -48,-28" fill="none" stroke="#00e5ff" stroke-width="0.8" opacity="0.5"/>
+      <path d="M-32 7 q9 -24 17 0 t17 0 t15 -4" fill="none" stroke="#e020ff" stroke-width="1.7" opacity="0.85"/>
+      <path d="M-18 -7 l11 13 l24 -28" fill="none" stroke="#00e5ff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+
+  <text x="640" y="446" text-anchor="middle" font-size="78" font-weight="bold" letter-spacing="10" fill="#e9f7ff" filter="url(#sglow)">S34L-W4RD</text>
+  <text x="640" y="492" text-anchor="middle" font-size="22" letter-spacing="5" fill="#9f7fe8" filter="url(#sphos)">cross-platform code-signing orchestrator</text>
+  <text x="640" y="540" text-anchor="middle" font-size="17" letter-spacing="3" fill="#00e5ff">sign every platform from one config</text>
+  <text x="640" y="572" text-anchor="middle" font-size="17" letter-spacing="3" fill="#e020ff">keys never live here</text>
+
+  <rect x="0" y="0" width="1280" height="640" fill="url(#ssc)"/>
+  <rect x="0" y="0" width="1280" height="640" fill="url(#svig)"/>
+
+  <text x="40" y="604" font-size="13" fill="#4a4263" letter-spacing="3">ITASHA.CORP</text>
+  <text x="1240" y="604" text-anchor="end" font-size="13" fill="#4a4263" letter-spacing="3">SIGN - WARD - VERIFY</text>
+</svg>
