@@ -1,0 +1,119 @@
+# =============================================================================
+# NO KEY MATERIAL RULE (load-bearing — see ships-publicly-vs-never.md)
+# -----------------------------------------------------------------------------
+# This is a PUBLIC code-signing tool. Its security derives from private-key
+# secrecy + HSM/KMS custody (Kerckhoffs's principle), NOT from source obscurity.
+# Therefore NO private key, certificate-with-private-key, keystore, provisioning
+# profile, signing password, PKCS#11 PIN, or cloud credential may EVER be
+# committed. Secrets live ONLY in an HSM / KMS / OS keychain / CI secret store
+# and are referenced by HANDLE/URI. The patterns below are the .gitignore layer
+# of the four-layer defense (.gitignore + .gitleaks.toml + pre-commit/pre-push +
+# pre-publish scrub gate). If git ever wants to track one of these, STOP: a
+# secret is about to leak. Remove it, rotate the exposed key, and never publish.
+# =============================================================================
+
+# --- Private keys & cert bundles (PKCS#12 / PFX / PEM / DER) ---
+*.p12
+*.pfx
+*.pem
+*.key
+*.der
+*.cer
+*.crt
+*.csr
+
+# --- Java keystores (Android / jarsigner) ---
+*.jks
+*.keystore
+*.bks
+
+# --- Apple signing material ---
+# *.p8 = App Store Connect API key; *.mobileprovision = provisioning profile.
+# NOTE: gitignore does NOT support trailing inline comments — patterns must be
+# bare on their own line, or the comment text becomes part of the pattern.
+*.p8
+*.mobileprovision
+*.provisionprofile
+*.certSigningRequest
+
+# --- SSH / GPG private keys ---
+id_rsa
+id_rsa.*
+id_dsa
+id_dsa.*
+id_ecdsa
+id_ecdsa.*
+id_ed25519
+id_ed25519.*
+*.gpg
+*.pgp
+# *.asc may carry an exported PGP private-key block — exclude by default.
+*.asc
+secring.*
+*.gnupg
+
+# --- minisign / signify secret keys ---
+*.sec
+minisign.key
+*.minisign.key
+
+# --- Generic secret material & secret directories ---
+secrets/
+.secrets/
+*.secret
+*.secrets
+*credentials*.json
+*service-account*.json
+*-sa.json
+.env
+.env.*
+*.env
+!*.env.example
+.netrc
+.npmrc
+.pypirc
+
+# =============================================================================
+# Standard build / tooling ignores
+# =============================================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.tox/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+
+# Node / branding tooling
+node_modules/
+
+# Generated brand rasters (only SVG sources are tracked — see branding/)
+*.png
+*.ico
+*.icns
+*.bmp
+!.github/assets/*.svg
+!branding/**/*.svg
+
+# OS cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# IDE
+.idea/
+.vscode/

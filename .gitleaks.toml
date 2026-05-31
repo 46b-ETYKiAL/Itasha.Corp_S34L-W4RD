@@ -1,0 +1,107 @@
+# gitleaks configuration for SealWard (S34L-W4RD)
+# ---------------------------------------------------------------------------
+# Tuned for CODE-SIGNING secrets. Extends the gitleaks default rule pack
+# (`useDefault = true` pulls in the built-in detectors for AWS/GCP/Azure
+# keys, generic API tokens, private-key PEM blocks, etc.) and ADDS custom
+# rules for the signing-specific secret shapes the defaults miss: Apple .p8
+# keys, keystore/MATCH passwords, and PKCS#11 PINs.
+#
+# Run modes (all three are wired in the four-layer defense):
+#   gitleaks protect --staged   # pre-commit
+#   gitleaks protect            # pre-push (unstaged + staged)
+#   gitleaks detect             # CI full-history scan
+#   gitleaks detect --no-git    # scan a working dir / fixture tree
+# Any finding exits non-zero and HARD-BLOCKS the commit/push/publish.
+
+title = "SealWard secret-scan ruleset"
+
+[extend]
+# Pull in the full gitleaks default rule pack, then add the rules below.
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# Custom rules — signing-specific secret shapes
+# ---------------------------------------------------------------------------
+
+[[rules]]
+id = "apple-app-store-connect-p8-key"
+description = "Apple App Store Connect API key (.p8 PKCS#8 EC private key)"
+regex = '''-----BEGIN PRIVATE KEY-----[\s\S]{0,200}MIGT[\s\S]+?-----END PRIVATE KEY-----'''
+keywords = ["BEGIN PRIVATE KEY"]
+tags = ["apple", "private-key", "code-signing"]
+
+[[rules]]
+id = "pkcs1-rsa-private-key"
+description = "PKCS#1 RSA private key block"
+regex = '''-----BEGIN RSA PRIVATE KEY-----'''
+keywords = ["BEGIN RSA PRIVATE KEY"]
+tags = ["private-key"]
+
+[[rules]]
+id = "ec-private-key"
+description = "EC private key block"
+regex = '''-----BEGIN EC PRIVATE KEY-----'''
+keywords = ["BEGIN EC PRIVATE KEY"]
+tags = ["private-key"]
+
+[[rules]]
+id = "openssh-private-key"
+description = "OpenSSH private key block"
+regex = '''-----BEGIN OPENSSH PRIVATE KEY-----'''
+keywords = ["BEGIN OPENSSH PRIVATE KEY"]
+tags = ["private-key", "ssh"]
+
+[[rules]]
+id = "pgp-private-key"
+description = "PGP/GPG private key block"
+regex = '''-----BEGIN PGP PRIVATE KEY BLOCK-----'''
+keywords = ["BEGIN PGP PRIVATE KEY"]
+tags = ["private-key", "gpg"]
+
+[[rules]]
+id = "fastlane-match-password"
+description = "Fastlane MATCH_PASSWORD (decrypts the iOS cert/profile repo)"
+regex = '''(?i)\bMATCH_PASSWORD\b\s*[:=]\s*['"]?[^\s'"#]{4,}'''
+keywords = ["MATCH_PASSWORD"]
+tags = ["apple", "ios", "password", "code-signing"]
+
+[[rules]]
+id = "android-keystore-password"
+description = "Android keystore / key password assignment"
+regex = '''(?i)\b(KEYSTORE_PASSWORD|KEY_PASSWORD|STOREPASS|KEYPASS|SIGNING_STORE_PASSWORD|SIGNING_KEY_PASSWORD)\b\s*[:=]\s*['"]?[^\s'"#]{4,}'''
+keywords = ["KEYSTORE_PASSWORD", "STOREPASS", "KEYPASS", "SIGNING_STORE_PASSWORD", "SIGNING_KEY_PASSWORD"]
+tags = ["android", "password", "code-signing"]
+
+[[rules]]
+id = "pkcs12-pfx-passphrase"
+description = "PKCS#12 / PFX import passphrase assignment"
+regex = '''(?i)\b(P12_PASSWORD|PFX_PASSWORD|CERT_PASSWORD|CERTIFICATE_PASSWORD|PKCS12_PASSWORD)\b\s*[:=]\s*['"]?[^\s'"#]{4,}'''
+keywords = ["P12_PASSWORD", "PFX_PASSWORD", "CERT_PASSWORD", "CERTIFICATE_PASSWORD", "PKCS12_PASSWORD"]
+tags = ["password", "code-signing"]
+
+[[rules]]
+id = "pkcs11-token-pin"
+description = "PKCS#11 / HSM token PIN assignment"
+regex = '''(?i)\b(PKCS11_PIN|TOKEN_PIN|HSM_PIN|SLOT_PIN)\b\s*[:=]\s*['"]?[^\s'"#]{4,}'''
+keywords = ["PKCS11_PIN", "TOKEN_PIN", "HSM_PIN", "SLOT_PIN"]
+tags = ["hsm", "pkcs11", "pin", "code-signing"]
+
+# ---------------------------------------------------------------------------
+# Allowlist — documentation / example HANDLES are NOT secrets.
+# Handles (URIs/ARNs/slot labels) are exactly what SealWard is designed to
+# reference publicly, so example handle strings must not trip the scanner.
+# ---------------------------------------------------------------------------
+[allowlist]
+description = "Allow example HANDLE/URI references and docs that name (not value) secrets"
+regexes = [
+    # Example handle shapes that are SAFE to publish (no secret value).
+    '''pkcs11:slot=\d+;object=[A-Za-z0-9_-]+''',
+    '''arn:aws:kms:[a-z0-9-]+:\d+:key/[0-9a-f-]+''',
+    '''https://[a-z0-9-]+\.vault\.azure\.net/keys/[A-Za-z0-9_-]+''',
+    '''projects/[A-Za-z0-9_-]+/locations/[a-z0-9-]+/keyRings/[A-Za-z0-9_-]+/cryptoKeys/[A-Za-z0-9_-]+''',
+]
+paths = [
+    '''ships-publicly-vs-never\.md''',     # documents the never-commit NAMES, no values
+    '''README\.md''',
+    '''(.*?)tests/fixtures/(.*?)\.example$''',
+]
