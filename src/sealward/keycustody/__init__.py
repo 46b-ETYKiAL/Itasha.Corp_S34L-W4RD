@@ -8,4 +8,6 @@ only references it by handle.
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from sealward.keycustody.resolver import CustodyResolver, ResolvedHandle, get_provider
+
+__all__ = ["CustodyResolver", "ResolvedHandle", "get_provider"]
