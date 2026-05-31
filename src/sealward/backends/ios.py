@@ -363,15 +363,13 @@ def _redact(text: str) -> str:
     secret-bearing variable so it can never reach a persisted outcome.
     """
     secret_tokens = ("MATCH_PASSWORD", "KEY_PASSWORD", "KEYSTORE_PASSWORD", "P12_PASSWORD")
-    lines = [
-        ln for ln in text.splitlines() if not any(tok in ln.upper() for tok in secret_tokens)
-    ]
+    lines = [ln for ln in text.splitlines() if not any(tok in ln.upper() for tok in secret_tokens)]
     return "\n".join(lines)
 
 
 # Self-register at import time so the CLI dispatch table picks up the iOS
 # backend without backends/__init__.py needing to hard-import this module
 # (that module must import this one to trigger registration).
-from sealward.cli import register_backend  # noqa: E402 - deferred to avoid import cycle
+from sealward.registry import register_backend  # noqa: E402 - deferred to avoid import cycle
 
 register_backend(Platform.IOS, IosBackend)

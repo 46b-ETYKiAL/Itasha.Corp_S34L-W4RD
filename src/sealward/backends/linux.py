@@ -496,6 +496,6 @@ def _redact(text: str | None) -> str:
 # --- self-registration -------------------------------------------------------
 # Importing this module registers the Linux backend with the CLI dispatch. The
 # cli module imports nothing from backends, so this import is acyclic.
-from sealward.cli import register_backend  # noqa: E402 - register at import end
+from sealward.registry import register_backend  # noqa: E402 - register at import end
 
 register_backend(Platform.LINUX, LinuxBackend)

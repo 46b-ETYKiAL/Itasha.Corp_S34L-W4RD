@@ -39,6 +39,11 @@ from sealward.config_schema import (
     SigningTarget,
 )
 from sealward.keycustody.resolver import CustodyResolver
+from sealward.registry import (
+    get_backend,
+    register_backend,
+    registered_platforms,
+)
 from sealward.result import (
     SigningOutcome,
     SigningStatus,
@@ -47,37 +52,26 @@ from sealward.result import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from sealward.backends.base import CapabilityReport, SignerBackend
+    from sealward.backends.base import CapabilityReport
 
-__all__ = ["get_backend", "main", "registered_platforms"]
+# ``register_backend`` is re-exported (not used inside this module) so the
+# historical ``from sealward.cli import register_backend`` import path keeps
+# working; it now mutates the single canonical dict in ``sealward.registry``.
+__all__ = ["get_backend", "main", "register_backend", "registered_platforms"]
 
 
 # --- Backend registry --------------------------------------------------------
 #
-# Backends (Phases 2-6) register a zero-arg factory here at import time. Until a
-# platform's backend module lands, its slot is empty and the orchestrator emits
-# a structured SKIPPED_TOOL_ABSENT outcome — the dispatch table never carries a
-# dormant entry, and a missing backend never fabricates a SIGNED result.
-
-_BACKEND_FACTORIES: dict[Platform, type[SignerBackend] | object] = {}
-
-
-def register_backend(platform: Platform, factory: object) -> None:
-    """Register a backend factory (zero-arg callable) for ``platform``."""
-    _BACKEND_FACTORIES[platform] = factory
-
-
-def get_backend(platform: Platform) -> SignerBackend | None:
-    """Return a backend instance for ``platform``, or ``None`` if unregistered."""
-    factory = _BACKEND_FACTORIES.get(platform)
-    if factory is None:
-        return None
-    return factory()  # type: ignore[operator]
-
-
-def registered_platforms() -> list[Platform]:
-    """Return the platforms with a registered backend (sorted by value)."""
-    return sorted(_BACKEND_FACTORIES.keys(), key=lambda p: p.value)
+# The dispatch table (``register_backend`` / ``get_backend`` /
+# ``registered_platforms``) is defined in :mod:`sealward.registry` and imported
+# at the top of this module. It lives there — NOT here — so the dict is the same
+# object under both the ``sealward`` console-script entry point and
+# ``python -m sealward.cli`` (the latter loads this file a second time as the
+# ``__main__`` module). Anchoring the registry in a dedicated, singly-imported
+# module is the root-cause fix for the registry double-import trap: backends
+# self-register a zero-arg factory into the ONE canonical dict at import time,
+# and every entry point reads that same dict. A missing backend still yields a
+# structured ``SKIPPED_*`` outcome — never a fabricated success.
 
 
 # --- Config loading ----------------------------------------------------------

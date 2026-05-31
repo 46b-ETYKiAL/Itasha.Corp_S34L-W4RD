@@ -35,9 +35,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sealward.backends.base import CapabilityReport, SignerBackendABC
-from sealward.cli import register_backend
 from sealward.config_schema import Platform, Profile
 from sealward.keycustody.resolver import CustodyResolver
+from sealward.registry import register_backend
 from sealward.result import SigningOutcome, SigningStatus, VerifyVerdict, outcome_counter
 
 if TYPE_CHECKING:  # pragma: no cover - typing only

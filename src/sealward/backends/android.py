@@ -219,9 +219,7 @@ class AndroidBackend(SignerBackendABC):
             )
 
         if apksigner is not None:
-            return self._sign_with_apksigner(
-                apksigner, artifact, target, keystore_password
-            )
+            return self._sign_with_apksigner(apksigner, artifact, target, keystore_password)
         return self._sign_with_jarsigner(
             jarsigner,  # type: ignore[arg-type]  # guarded: both-None returned above
             artifact,
@@ -389,9 +387,7 @@ class AndroidBackend(SignerBackendABC):
                 )
             )
         verdict = self._run_verify(apksigner, artifact)
-        status = (
-            SigningStatus.VERIFIED if verdict is VerifyVerdict.PASSED else SigningStatus.FAILED
-        )
+        status = SigningStatus.VERIFIED if verdict is VerifyVerdict.PASSED else SigningStatus.FAILED
         return self._record(
             SigningOutcome(
                 status=status,
@@ -428,9 +424,7 @@ class AndroidBackend(SignerBackendABC):
         files = [m for m in matches if m.is_file()]
         return files[0] if files else None
 
-    def _skipped(
-        self, status: SigningStatus, artifact: Path | None, reason: str
-    ) -> SigningOutcome:
+    def _skipped(self, status: SigningStatus, artifact: Path | None, reason: str) -> SigningOutcome:
         """Build + record a structured SKIPPED_* outcome (never SIGNED)."""
         return self._record(
             SigningOutcome(
@@ -469,6 +463,6 @@ class AndroidBackend(SignerBackendABC):
 # import this module for the registration to fire (it does NOT import it itself
 # to keep the package importable on machines without the Android toolchain — the
 # CLI imports concrete backends as the Phase 2-6 modules land).
-from sealward.cli import register_backend  # noqa: E402 - deferred to avoid import cycle
+from sealward.registry import register_backend  # noqa: E402 - deferred to avoid import cycle
 
 register_backend(Platform.ANDROID, AndroidBackend)

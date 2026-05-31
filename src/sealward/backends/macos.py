@@ -344,9 +344,7 @@ class MacosBackend(SignerBackendABC):
             )
 
         # codesign structural verification under Hardened Runtime.
-        cs = _run(
-            ["codesign", "--verify", "--strict", "--verbose=2", artifact_str], timeout=120
-        )
+        cs = _run(["codesign", "--verify", "--strict", "--verbose=2", artifact_str], timeout=120)
         # Gatekeeper assessment — the load-bearing distribution gate.
         spctl = _run(
             ["spctl", "--assess", "--type", "execute", "--verbose=2", artifact_str], timeout=120
@@ -407,6 +405,6 @@ class MacosBackend(SignerBackendABC):
 # Platform.MACOS → MacosBackend purely through this registration; backends/__init__
 # must import this module for the registration to fire (the __init__ does not
 # auto-import platform backends to keep import-on-non-Darwin cost zero).
-from sealward.cli import register_backend  # noqa: E402 - deferred to avoid import cycle at top
+from sealward.registry import register_backend  # noqa: E402 - deferred to avoid import cycle at top
 
 register_backend(Platform.MACOS, MacosBackend)
