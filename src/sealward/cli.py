@@ -261,8 +261,21 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _ensure_backends_registered() -> None:
+    """Import the backends package so every backend self-registers.
+
+    The concrete backend modules call :func:`register_backend` at import time, but
+    nothing imports them implicitly. The orchestrator entry point triggers that
+    wiring here. The import is local to ``main`` (not module-level) to avoid the
+    import cycle: each backend module imports ``register_backend`` from this
+    module, so a top-level ``import sealward.backends`` would be circular.
+    """
+    import sealward.backends  # noqa: F401 - side-effecting: fires register_backend(...)
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point. Returns a process exit code."""
+    _ensure_backends_registered()
     parser = _build_parser()
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
     return int(args.func(args))
