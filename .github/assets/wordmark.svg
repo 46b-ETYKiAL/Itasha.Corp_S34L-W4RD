@@ -1,0 +1,38 @@
+<!-- Itasha Corp wordmark — 720×180 — CRT-IC v5 -->
+<!-- S34L-W4RD in the brand terminal-mono type, accent primary with -->
+<!-- #6f9bff chromatic-aberration offset, over void black with -->
+<!-- scanlines + a blinking cursor block. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 180" width="720" height="180" role="img" aria-label="S34L-W4RD wordmark">
+  <title>S34L-W4RD</title>
+  <desc>code-signer key-shield</desc>
+  <defs>
+    <pattern id="wm-scan" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect width="4" height="4" fill="#070a0c"/><rect width="4" height="1" y="0" fill="#f0eef5" opacity="0.04"/>
+    </pattern>
+    <filter id="wm-glow"><feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <style>@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }</style>
+
+  <rect width="720" height="180" rx="10" fill="#070a0c"/>
+  <rect width="720" height="180" rx="10" fill="url(#wm-scan)"/>
+
+  <!-- thin frame ticks -->
+  <g stroke="#2f6bff" stroke-width="2" opacity="0.5">
+    <line x1="16" y1="16" x2="40" y2="16"/><line x1="16" y1="16" x2="16" y2="40"/>
+    <line x1="704" y1="164" x2="680" y2="164"/><line x1="704" y1="164" x2="704" y2="140"/>
+  </g>
+
+  <!-- wordmark with chromatic-aberration shadow -->
+  <g font-family="'JetBrains Mono','Courier New','DejaVu Sans Mono',monospace" font-size="62" font-weight="700" letter-spacing="4" text-anchor="middle">
+    <text x="356" y="106" fill="#6f9bff" opacity="0.75">S34L-W4RD</text>
+    <text x="360" y="103" fill="#2f6bff" filter="url(#wm-glow)">S34L-W4RD</text>
+  </g>
+
+  <!-- subtitle -->
+  <text x="360" y="146" text-anchor="middle" font-family="'JetBrains Mono','SF Mono',Consolas,monospace" font-size="13" letter-spacing="3" fill="#5a6b73">code-signer key-shield</text>
+
+  <!-- blinking cursor block at right -->
+  <rect x="664" y="74" width="32" height="44" fill="#2f6bff">
+    <animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.5;0.5;1" dur="1.1s" repeatCount="indefinite"/>
+  </rect>
+</svg>
